@@ -11,7 +11,7 @@
 # Step 2: Query & Prep Data
 # Step 3: Count Tasks & Merge Back
 # Step 4: Conduct Basic Logit Regression 
-# Step 5: Update Salesforce Records 
+# Step 5: Get Probabilities & Update Records 
 
 # Set-up  ############################################# ####
 ############################################################
@@ -35,6 +35,7 @@ library(RForcecom)
 user <- 'yourname@yourusername.com'
 pass_token <- 'yourpasswordandTOKEN#######################'
 session <- rforcecom.login(user, pass_token)
+
 
 # Take a look around the schema & print out a list of objects
 schema <- rforcecom.getObjectList(session)
@@ -113,19 +114,18 @@ summary(won_reg)
 won_null <- glm(Won ~ 1, data = opp_tasks[opp_tasks$Closed == TRUE,], family = binomial )
 1-logLik(won_reg)/logLik(won_null)
 
-
 # Plot the number of tasks vs the incident of winning (or not) for all Closed Opportunities
 par(oma=c(1,1,1,1),mar=c(5,6,4,1)) #<-- extend the margins a bit
 plot(opp_tasks[opp_tasks$Closed == TRUE,]$Freq,opp_tasks[opp_tasks$Closed == TRUE,]$Won, main = "# of Tasks for Closed Opportunities", xlab = "# of Tasks", ylab = "Fitted Win Probability \n(and actual outcome)\n LOST           WON")
 lines(opp_tasks[opp_tasks$Closed == TRUE,]$Freq, won_reg$fitted, type = "l", col = "blue")
 
+
+# Step 5: Get Probabilities & Update Records  ########## ####
+############################################################
+
 # Use the won_reg Regression output to predict success for open Opportunities
 opp_tasks$Win_chance <- predict(won_reg, opp_tasks, type = "response")
 opp_tasks[opp_tasks$Closed == FALSE,c("Name","Freq","Win_chance")]
-
-
-# Step 5: Update Salesforce Records  ################## ####
-############################################################
 
 # Lastly, update Salesforce records with won_reg computed Win Probability
 # To do so, use sapply with a quick custom function to move opp_tasks through "rforcecom.update"
