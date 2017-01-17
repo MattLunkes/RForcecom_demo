@@ -36,7 +36,6 @@ user <- 'yourname@yourusername.com'
 pass_token <- 'yourpasswordandTOKEN#######################'
 session <- rforcecom.login(user, pass_token)
 
-
 # Take a look around the schema & print out a list of objects
 schema <- rforcecom.getObjectList(session)
 names(schema)
@@ -83,7 +82,7 @@ opps[1,]$Amount
 
 # Table (count) Tasks by WhatId, and reorder/reindex by descending frequency
 task_counts <- as.data.frame(table(tasks$WhatId))
-task_counts <- task_counts[order(task_counts$Freq, decreasing = TRUE),]
+task_counts <- task_counts[order(task_counts$Freq, decreasing = TRUE),] #<-- sort decreasing
 rownames(task_counts) <- NULL #<-- resets index
 task_counts
 names(task_counts) #<-- print out the names so you'll know what you need to merge back by
@@ -97,8 +96,8 @@ rownames(opp_tasks) <- NULL #<-- resets index
 
 # Double-check everything:
 opp_tasks
+class(opp_tasks$Won)
 class(opp_tasks$Freq)
-class(opp_tasks$Amount)
 
 
 # Step 4: Conduct Basic Logit Regression  ############# ####
@@ -112,25 +111,43 @@ summary(won_reg)
 # If you need a measure of fit, compute a Pseudo R^2 (McFadden's R^2)
 # http://thestatsgeek.com/2014/02/08/r-squared-in-logistic-regression/
 won_null <- glm(Won ~ 1, data = opp_tasks[opp_tasks$Closed == TRUE,], family = binomial )
-1-logLik(won_reg)/logLik(won_null)
+pseudo_R2 <- 1-logLik(won_reg)/logLik(won_null)
+pseudo_R2
+
+
+# Step 5: Get Probabilities & Update Records  ######### ####
+############################################################
 
 # Plot the number of tasks vs the incident of winning (or not) for all Closed Opportunities
 par(oma=c(1,1,1,1),mar=c(5,6,4,1)) #<-- extend the margins a bit
 plot(opp_tasks[opp_tasks$Closed == TRUE,]$Freq,opp_tasks[opp_tasks$Closed == TRUE,]$Won, main = "# of Tasks for Closed Opportunities", xlab = "# of Tasks", ylab = "Fitted Win Probability \n(and actual outcome)\n LOST           WON")
 lines(opp_tasks[opp_tasks$Closed == TRUE,]$Freq, won_reg$fitted, type = "l", col = "blue")
+legend("right", legend= "Fitted Values", lty = 1, col= "blue")
 
-
-# Step 5: Get Probabilities & Update Records  ########## ####
-############################################################
-
-# Use the won_reg Regression output to predict success for open Opportunities
+# Use the won_reg Regression output to predict success for ALL Opportunities
 opp_tasks$Win_chance <- predict(won_reg, opp_tasks, type = "response")
+
+# Look specifically at Win Chance for Open Opps
 opp_tasks[opp_tasks$Closed == FALSE,c("Name","Freq","Win_chance")]
+
+# Compare won_reg predict() results with what we got via win_reg$fitted 
+tail(cbind(opp_tasks[opp_tasks$Closed == TRUE,c("Name","Freq","Win_chance")],won_reg$fitted))
+
+# For the heck of it, we can use the underlying math to manually calculate Win probability on a 1 task Opportunity
+# F(IsWon) = 1 / [ 1 + e^(-(ß₀ + ß₁ * Number_of_Tasks) ] 
+round( 1 / (1 + exp(-(-2.6108 + 0.5973 * 1))) , digits = 5)
+# Should be pretty close, sans rounding differences
+
+#Plot out the prediction curve for Open Opportunities
+par(oma=c(1,1,1,1),mar=c(5,6,4,1)) #<-- extend the margins a bit
+plot(opp_tasks[opp_tasks$Closed == FALSE,]$Freq, opp_tasks[opp_tasks$Closed == FALSE,]$Win_chance, type = "l", col = "blue", main = "# of Tasks for Open Opportunities\n vs Fitted Win Probability", xlab = "# of Tasks", ylab = "Fitted Win Probability")
+legend("right", legend= "Fitted Values", lty = 1, col= "blue")
 
 # Lastly, update Salesforce records with won_reg computed Win Probability
 # To do so, use sapply with a quick custom function to move opp_tasks through "rforcecom.update"
 sapply(1:nrow(opp_tasks), function(x) rforcecom.update(session,"Opportunity",opp_tasks[x,]$Id,fields = c(Win_Chance__c = (opp_tasks[x,]$Win_chance * 100) )) )
 # In the 'fields' (where the actual data gets passed through), multiply by 100 to convert to Salesforce Percent data-type
+
 
 ############################################################
 ###                          End                         ###
